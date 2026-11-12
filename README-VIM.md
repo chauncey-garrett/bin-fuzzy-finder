@@ -1,6 +1,26 @@
 FZF Vim integration
 ===================
 
+<!-- vim-markdown-toc GFM -->
+
+* [Installation](#installation)
+* [Summary](#summary)
+* [`:FZF[!]`](#fzf)
+    * [Configuration](#configuration)
+        * [Examples](#examples)
+            * [Explanation of `g:fzf_colors`](#explanation-of-gfzf_colors)
+* [`fzf#run`](#fzfrun)
+* [`fzf#wrap`](#fzfwrap)
+    * [Global options supported by `fzf#wrap`](#global-options-supported-by-fzfwrap)
+* [Tips](#tips)
+    * [fzf inside terminal buffer](#fzf-inside-terminal-buffer)
+    * [Starting fzf in a Vim popup window](#starting-fzf-in-a-vim-popup-window)
+    * [Starting fzf in a tmux/Zellij popup window](#starting-fzf-in-a-tmuxzellij-popup-window)
+    * [Hide statusline](#hide-statusline)
+* [License](#license)
+
+<!-- vim-markdown-toc -->
+
 Installation
 ------------
 
@@ -12,7 +32,10 @@ differ depending on the package manager.
 " If installed using Homebrew
 set rtp+=/usr/local/opt/fzf
 
-" If installed using git
+" If installed using Homebrew on Apple Silicon
+set rtp+=/opt/homebrew/opt/fzf
+
+" If you have cloned fzf on ~/.fzf directory
 set rtp+=~/.fzf
 ```
 
@@ -23,7 +46,10 @@ written as:
 " If installed using Homebrew
 Plug '/usr/local/opt/fzf'
 
-" If installed using git
+" If installed using Homebrew on Apple Silicon
+Plug '/opt/homebrew/opt/fzf'
+
+" If you have cloned fzf on ~/.fzf directory
 Plug '~/.fzf'
 ```
 
@@ -115,7 +141,7 @@ let g:fzf_action = {
 
 " An action can be a reference to a function that processes selected lines
 function! s:build_quickfix_list(lines)
-  call setqflist(map(copy(a:lines), '{ "filename": v:val }'))
+  call setqflist(map(copy(a:lines), '{ "filename": v:val, "lnum": 1 }'))
   copen
   cc
 endfunction
@@ -127,19 +153,35 @@ let g:fzf_action = {
   \ 'ctrl-v': 'vsplit' }
 
 " Default fzf layout
-" - Popup window (center of the screen)
-let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6 } }
+if exists('$TMUX') || exists('$ZELLIJ')
+  " The Vim plugin will try to open fzf in a tmux or Zellij popup
+  " if possible (requires recent fzf and tmux/zellij) using --popup option,
+  " with the following argument:
+  let g:fzf_layout = { 'popup': '90%,60%' }
+else
+  " If --popup option is not available, it will open in a popup window inside
+  " Vim (center of the screen)
+  let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6 } }
+endif
 
-" - Popup window (center of the current window)
+" Here are some more layout examples:
+
+" - Tmux or Zellij popup at the bottom 40%
+let g:fzf_layout = { 'popup': 'bottom,40%' }
+
+" - Tmux or Zellij popup at the top with a different size
+let g:fzf_layout = { 'popup': 'top,90%,40%' }
+
+" - Vim popup window: at the center of the current window (relative)
 let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6, 'relative': v:true } }
 
-" - Popup window (anchored to the bottom of the current window)
+" - Vim popup window: anchored to the bottom of the current window
 let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6, 'relative': v:true, 'yoffset': 1.0 } }
 
-" - down / up / left / right
+" - Vim split window: down / up / left / right
 let g:fzf_layout = { 'down': '40%' }
 
-" - Window using a Vim command
+" - Vim window using a Vim command
 let g:fzf_layout = { 'window': 'enew' }
 let g:fzf_layout = { 'window': '-tabnew' }
 let g:fzf_layout = { 'window': '10new' }
@@ -149,6 +191,7 @@ let g:fzf_layout = { 'window': '10new' }
 let g:fzf_colors =
 \ { 'fg':      ['fg', 'Normal'],
   \ 'bg':      ['bg', 'Normal'],
+  \ 'query':   ['fg', 'Normal'],
   \ 'hl':      ['fg', 'Comment'],
   \ 'fg+':     ['fg', 'CursorLine', 'CursorColumn', 'Normal'],
   \ 'bg+':     ['bg', 'CursorLine', 'CursorColumn'],
@@ -232,19 +275,20 @@ call fzf#run({'sink': 'e'})
 ```
 
 We haven't specified the `source`, so this is equivalent to starting fzf on
-command line without standard input pipe; fzf will use find command (or
-`$FZF_DEFAULT_COMMAND` if defined) to list the files under the current
-directory. When you select one, it will open it with the sink, `:e` command.
-If you want to open it in a new tab, you can pass `:tabedit` command instead
-as the sink.
+command line without standard input pipe; fzf will traverse the file system
+under the current directory to get the list of files. (If
+`$FZF_DEFAULT_COMMAND` is set, fzf will use the output of the command
+instead.) When you select one, it will open it with the sink, `:e` command. If
+you want to open it in a new tab, you can pass `:tabedit` command instead as
+the sink.
 
 ```vim
 call fzf#run({'sink': 'tabedit'})
 ```
 
-Instead of using the default find command, you can use any shell command as
-the source. The following example will list the files managed by git. It's
-equivalent to running `git ls-files | fzf` on shell.
+You can use any shell command as the source to generate the list. The
+following example will list the files managed by git. It's equivalent to
+running `git ls-files | fzf` on shell.
 
 ```vim
 call fzf#run({'source': 'git ls-files', 'sink': 'e'})
@@ -282,12 +326,13 @@ The following table summarizes the available options.
 | `source`                   | string        | External command to generate input to fzf (e.g. `find .`)             |
 | `source`                   | list          | Vim list as input to fzf                                              |
 | `sink`                     | string        | Vim command to handle the selected item (e.g. `e`, `tabe`)            |
-| `sink`                     | funcref       | Reference to function to process each selected item                   |
+| `sink`                     | funcref       | Function to be called with each selected item                         |
 | `sinklist` (or `sink*`)    | funcref       | Similar to `sink`, but takes the list of output lines at once         |
+| `exit`                     | funcref       | Function to be called with the exit status of fzf (e.g. 0, 1, 2, 130) |
 | `options`                  | string/list   | Options to fzf                                                        |
 | `dir`                      | string        | Working directory                                                     |
 | `up`/`down`/`left`/`right` | number/string | (Layout) Window position and size (e.g. `20`, `50%`)                  |
-| `tmux`                     | string        | (Layout) fzf-tmux options (e.g. `-p90%,60%`)                          |
+| `popup`/`tmux`             | string        | (Layout) `--popup` options (e.g. `90%,70%`)                           |
 | `window` (Vim 8 / Neovim)  | string        | (Layout) Command to open fzf window (e.g. `vertical aboveleft 30new`) |
 | `window` (Vim 8 / Neovim)  | dict          | (Layout) Popup window settings (e.g. `{'width': 0.9, 'height': 0.6}`) |
 
@@ -309,7 +354,7 @@ following options are allowed:
     - `yoffset` [float default 0.5 range [0 ~ 1]]
     - `xoffset` [float default 0.5 range [0 ~ 1]]
     - `relative` [boolean default v:false]
-    - `border` [string default `rounded`]: Border style
+    - `border` [string default `rounded` (`sharp` on Windows)]: Border style
         - `rounded` / `sharp` / `horizontal` / `vertical` / `top` / `bottom` / `left` / `right` / `no[ne]`
 
 `fzf#wrap`
@@ -399,10 +444,10 @@ Tips
 
 ### fzf inside terminal buffer
 
-On the latest versions of Vim and Neovim, fzf will start in a terminal buffer.
-If you find the default ANSI colors to be different, consider configuring the
-colors using `g:terminal_ansi_colors` in regular Vim or `g:terminal_color_x`
-in Neovim.
+When fzf is configured to start in a terminal buffer inside Vim or Neovim, you
+may find the default ANSI colors to be different. In that case, configure the
+colors using `g:terminal_ansi_colors` in regular Vim or `g:terminal_color_x` in
+Neovim.
 
 ```vim
 " Terminal colors for seoul256 color scheme
@@ -433,7 +478,10 @@ else
 endif
 ```
 
-### Starting fzf in a popup window
+### Starting fzf in a Vim popup window
+
+You can configure fzf to start in a Vim popup window by setting the `window` key
+in `g:fzf_layout`.
 
 ```vim
 " Required:
@@ -449,15 +497,32 @@ endif
 let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6 } }
 ```
 
-Alternatively, you can make fzf open in a tmux popup window (requires tmux 3.2
-or above) by putting fzf-tmux options in `tmux` key.
+### Starting fzf in a tmux/Zellij popup window
+
+fzf can also start in a popup of the multiplexer instead of a window inside
+Vim, by putting a `--popup` option value in the `popup` key. `tmux` is
+accepted as a synonym, just as `--tmux` is an alias of `--popup`.
+
+The layout works on tmux 3.3 or above, or on Zellij 0.44 or above with fzf
+0.71.0 or above. It is the default on tmux 3.7 or above with fzf 0.74.0 or
+above, and on Zellij, where the pane is not modal: Vim keeps the window fzf
+was started from visible, and you can switch to it while fzf is open. Below
+those versions tmux gives a popup that cannot be left, so a window inside Vim
+is the default there. On tmux, an explicit `--border` style also gives a modal
+popup rather than a floating pane, because the native border of a tmux
+floating pane cannot be removed. Drop `--border` to keep the floating pane and
+its native border. Zellij keeps the floating pane either way, and hides its
+native border when fzf draws one. Set `g:fzf_layout` yourself to choose either
+one.
 
 ```vim
-" See `man fzf-tmux` for available options
-if exists('$TMUX')
-  let g:fzf_layout = { 'tmux': '-p90%,60%' }
+if exists('$TMUX') || exists('$ZELLIJ')
+  " See `--popup` option in `man fzf` for available options
+  " [center|top|bottom|left|right][,SIZE[%]][,SIZE[%]]
+  let g:fzf_layout = { 'popup': '90%,70%' }
 else
-  let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.6 } }
+  " Configure the Vim popup window in case not on the multiplexer
+  let g:fzf_layout = { 'window': { 'width': 0.9, 'height': 0.7 } }
 endif
 ```
 
@@ -465,7 +530,8 @@ endif
 
 When fzf starts in a terminal buffer, the file type of the buffer is set to
 `fzf`. So you can set up `FileType fzf` autocmd to customize the settings of
-the window.
+the window. This applies to the layouts that open inside Vim, not to the tmux
+or Zellij pane the default uses, which is not a buffer.
 
 For example, if you open fzf on the bottom on the screen (e.g. `{'down':
 '40%'}`), you might want to temporarily disable the statusline for a cleaner
@@ -483,4 +549,4 @@ autocmd  FileType fzf set laststatus=0 noshowmode noruler
 
 The MIT License (MIT)
 
-Copyright (c) 2013-2021 Junegunn Choi
+Copyright (c) 2013-2026 Junegunn Choi
